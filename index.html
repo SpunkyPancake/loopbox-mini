@@ -116,6 +116,7 @@ const LIKED_PLAYLIST_NAME = "Snippet Sampler Likes";
 const DEFAULT_SNIPPET_MS = 10000;
 const START_WINDOW_MS = 60000; // random start point is chosen from the first minute of the track
 const SKIP_MS = 5000;
+const SERIALIZE_SEARCH_REQUESTS = true; // testing: one search request at a time instead of parallel bursts. Set to false to roll back.
 /* ===================================== */
 
 const SCOPES = [
@@ -311,9 +312,16 @@ function randomQuery() {
 
 async function fetchRandomTracks(queryCount = 6) {
   const queries = Array.from({ length: queryCount }, randomQuery);
-  const results = await Promise.all(queries.map(q =>
-    api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`)
-  ));
+  const runQuery = q => api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`);
+  let results;
+  if (SERIALIZE_SEARCH_REQUESTS) {
+    results = [];
+    for (const q of queries) {
+      results.push(await runQuery(q));
+    }
+  } else {
+    results = await Promise.all(queries.map(runQuery));
+  }
   const seen = new Set();
   const tracks = [];
   for (const data of results) {
