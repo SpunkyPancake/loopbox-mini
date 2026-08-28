@@ -63,6 +63,7 @@
   .like-btn.liked { background: var(--accent); color: #000; }
   hr { border: none; border-top: 1px solid #262626; margin: 20px 0; }
   .hidden { display: none; }
+  .logout-btn { background: none; color: var(--muted); font-size: 12px; font-weight: 500; padding: 6px; width: auto; display: block; margin: 10px auto 0; text-decoration: underline; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -77,6 +78,7 @@
   <div id="appView" class="hidden">
     <button class="primary" id="searchBtn">🎲 Surprise me</button>
     <div id="status" class="status"></div>
+    <button class="logout-btn" id="logoutBtn">Log out</button>
 
     <div id="player" class="card hidden">
       <div class="track-name" id="trackName">—</div>
@@ -127,6 +129,7 @@ const els = {
   appView: document.getElementById("appView"),
   loginBtn: document.getElementById("loginBtn"),
   searchBtn: document.getElementById("searchBtn"),
+  logoutBtn: document.getElementById("logoutBtn"),
   status: document.getElementById("status"),
   player: document.getElementById("player"),
   trackName: document.getElementById("trackName"),
@@ -180,6 +183,23 @@ async function login() {
     state: oauthState,
   });
   window.location = "https://accounts.spotify.com/authorize?" + params.toString();
+}
+
+function logout() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("expires_at");
+  localStorage.removeItem("pkce_verifier");
+  localStorage.removeItem("oauth_state");
+  state.accessToken = null;
+  state.queue = [];
+  state.index = -1;
+  clearInterval(trickleTimer);
+  trickleTimer = null;
+  els.player.classList.add("hidden");
+  els.appView.classList.add("hidden");
+  els.loginView.classList.remove("hidden");
+  els.status.textContent = "";
 }
 
 async function exchangeCodeForToken(code) {
@@ -499,6 +519,7 @@ async function likeTrack() {
 // ---------- Wire up UI ----------
 els.loginBtn.addEventListener("click", login);
 els.searchBtn.addEventListener("click", loadRandomQueue);
+els.logoutBtn.addEventListener("click", logout);
 els.playBtn.addEventListener("click", async () => {
   const d = state.deviceId || await getActiveDevice();
   await api(`/me/player/play?device_id=${d}`, { method: "PUT" });
