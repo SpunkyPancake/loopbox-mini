@@ -240,10 +240,17 @@ async function refreshToken() {
 }
 
 // ---------- API wrapper ----------
-async function api(path, opts = {}) {
-  if (Date.now() > Number(localStorage.getItem("expires_at") || 0)) {
-    await refreshToken();
+let refreshPromise = null;
+async function ensureFreshToken() {
+  if (Date.now() <= Number(localStorage.getItem("expires_at") || 0)) return;
+  if (!refreshPromise) {
+    refreshPromise = refreshToken().finally(() => { refreshPromise = null; });
   }
+  await refreshPromise;
+}
+
+async function api(path, opts = {}) {
+  await ensureFreshToken();
   const res = await fetch("https://api.spotify.com/v1" + path, {
     ...opts,
     headers: {
@@ -254,7 +261,12 @@ async function api(path, opts = {}) {
   });
   if (res.status === 204 || res.status === 202) return null;
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const msg = data?.error?.message || res.statusText || `HTTP ${res.status}`;
+    throw new Error(`${res.status}: ${msg}`);
+  }
+  return data;
 }
 
 // ---------- App logic ----------
@@ -286,9 +298,15 @@ const RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyz".split("");
 async function loadRandomQueue() {
   els.status.textContent = "Finding random songs…";
   const queries = Array.from({ length: 5 }, () => RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)]);
-  const results = await Promise.all(queries.map(q =>
-    api(`/search?q=${encodeURIComponent(q)}&type=track&limit=50&offset=${Math.floor(Math.random() * 950)}`)
-  ));
+  let results;
+  try {
+    results = await Promise.all(queries.map(q =>
+      api(`/search?q=${encodeURIComponent(q)}&type=track&limit=50&offset=${Math.floor(Math.random() * 950)}`)
+    ));
+  } catch (err) {
+    els.status.textContent = `Search failed: ${err.message}`;
+    return;
+  }
   const seen = new Set();
   const tracks = [];
   for (const data of results) {
