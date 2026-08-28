@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Snippet Sampler</title>
+<style>
+  :root {
+    --bg: #0e0e10;
+    --card: #181818;
+    --accent: #1db954;
+    --text: #f5f5f5;
+    --muted: #9a9a9a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  .wrap { width: 100%; max-width: 420px; }
+  h1 { font-size: 20px; text-align: center; margin: 8px 0 20px; }
+  button {
+    font-family: inherit;
+    border: none;
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .primary { background: var(--accent); color: #000; width: 100%; }
+  .secondary { background: #2a2a2a; color: var(--text); }
+  .row { display: flex; gap: 8px; margin: 8px 0; }
+  .row button { flex: 1; }
+  input[type="text"] {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #333;
+    background: #1c1c1c;
+    color: var(--text);
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 18px;
+    margin-top: 16px;
+    text-align: center;
+  }
+  .track-name { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+  .track-artist { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  .time-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .marks { font-size: 13px; color: var(--accent); margin-top: 8px; min-height: 18px; }
+  .status { text-align: center; color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 16px; }
+  .like-btn.liked { background: var(--accent); color: #000; }
+  hr { border: none; border-top: 1px solid #262626; margin: 20px 0; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎧 Snippet Sampler</h1>
+
+  <div id="loginView">
+    <button class="primary" id="loginBtn">Log in with Spotify</button>
+    <p class="status">You'll need Spotify Premium open on this phone for playback to work.</p>
+  </div>
+
+  <div id="appView" class="hidden">
+    <input type="text" id="genreInput" placeholder="Type a genre (e.g. shoegaze)">
+    <button class="primary" id="searchBtn">Find songs</button>
+    <div id="status" class="status"></div>
+
+    <div id="player" class="card hidden">
+      <div class="track-name" id="trackName">—</div>
+      <div class="track-artist" id="trackArtist">—</div>
+
+      <div class="row">
+        <button class="secondary" id="playBtn">▶ Play</button>
+        <button class="secondary" id="pauseBtn">⏸ Pause</button>
+      </div>
+      <div class="time-row">
+        <span id="posLabel">0:00</span>
+        <span id="durLabel">0:00</span>
+      </div>
+
+      <hr>
+
+      <div class="row">
+        <button class="secondary" id="markStartBtn">Mark start</button>
+        <button class="secondary" id="markEndBtn">Mark end</button>
+      </div>
+      <div class="marks" id="marksLabel"></div>
+      <div class="row">
+        <button class="secondary" id="playSnippetBtn">▶ Play snippet</button>
+        <button class="secondary" id="extendBtn">+15s</button>
+      </div>
+
+      <hr>
+
+      <div class="row">
+        <button class="secondary like-btn" id="likeBtn">♡ Like</button>
+        <button class="primary" id="skipBtn">Next ›</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ====== CONFIG — fill these in ====== */
+const CLIENT_ID = "PASTE_YOUR_CLIENT_ID_HERE";
+const REDIRECT_URI = window.location.origin + window.location.pathname; // must exactly match what you set in the Spotify dashboard
+const LIKED_PLAYLIST_NAME = "Snippet Sampler Likes";
+/* ===================================== */
+
+const SCOPES = [
+  "user-read-playback-state",
+  "user-modify-playback-state",
+  "user-read-private",
+  "playlist-modify-public",
+  "playlist-modify-private"
+].join(" ");
+
+const els = {
+  loginView: document.getElementById("loginView"),
+  appView: document.getElementById("appView"),
+  loginBtn: document.getElementById("loginBtn"),
+  genreInput: document.getElementById("genreInput"),
+  searchBtn: document.getElementById("searchBtn"),
+  status: document.getElementById("status"),
+  player: document.getElementById("player"),
+  trackName: document.getElementById("trackName"),
+  trackArtist: document.getElementById("trackArtist"),
+  playBtn: document.getElementById("playBtn"),
+  pauseBtn: document.getElementById("pauseBtn"),
+  posLabel: document.getElementById("posLabel"),
+  durLabel: document.getElementById("durLabel"),
+  markStartBtn: document.getElementById("markStartBtn"),
+  markEndBtn: document.getElementById("markEndBtn"),
+  marksLabel: document.getElementById("marksLabel"),
+  playSnippetBtn: document.getElementById("playSnippetBtn"),
+  likeBtn: document.getElementById("likeBtn"),
+  skipBtn: document.getElementById("skipBtn"),
+};
+
+let state = {
+  accessToken: null,
+  queue: [],
+  index: -1,
+  deviceId: null,
+  markStart: null,
+  markEnd: null,
+  snippetTimer: null,
+  likedPlaylistId: null,
+  posTimer: null,
+};
+
+// ---------- PKCE auth helpers ----------
+function base64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function sha256(text) {
+  return await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+}
+function randomString(len = 64) {
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  return base64url(arr).slice(0, len);
+}
+
+async function login() {
+  const verifier = randomString();
+  localStorage.setItem("pkce_verifier", verifier);
+  const challenge = base64url(await sha256(verifier));
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: "code",
+    redirect_uri: REDIRECT_URI,
+    code_challenge_method: "S256",
+    code_challenge: challenge,
+    scope: SCOPES,
+  });
+  window.location = "https://accounts.spotify.com/authorize?" + params.toString();
+}
+
+async function exchangeCodeForToken(code) {
+  const verifier = localStorage.getItem("pkce_verifier");
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: REDIRECT_URI,
+    code_verifier: verifier,
+  });
+  const res = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    localStorage.setItem("access_token", data.access_token);
+    localStorage.setItem("refresh_token", data.refresh_token);
+    localStorage.setItem("expires_at", Date.now() + data.expires_in * 1000);
+    state.accessToken = data.access_token;
+  }
+}
+
+async function refreshToken() {
+  const refresh = localStorage.getItem("refresh_token");
+  if (!refresh) return false;
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: "refresh_token",
+    refresh_token: refresh,
+  });
+  const res = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    localStorage.setItem("access_token", data.access_token);
+    localStorage.setItem("expires_at", Date.now() + data.expires_in * 1000);
+    if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
+    state.accessToken = data.access_token;
+    return true;
+  }
+  return false;
+}
+
+// ---------- API wrapper ----------
+async function api(path, opts = {}) {
+  if (Date.now() > Number(localStorage.getItem("expires_at") || 0)) {
+    await refreshToken();
+  }
+  const res = await fetch("https://api.spotify.com/v1" + path, {
+    ...opts,
+    headers: {
+      Authorization: "Bearer " + state.accessToken,
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 204 || res.status === 202) return null;
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+// ---------- App logic ----------
+function saveMarks() {
+  const track = state.queue[state.index];
+  if (!track) return;
+  const marks = JSON.parse(localStorage.getItem("snippet_marks") || "{}");
+  marks[track.id] = { start: state.markStart, end: state.markEnd };
+  localStorage.setItem("snippet_marks", JSON.stringify(marks));
+}
+function loadMarks(trackId) {
+  const marks = JSON.parse(localStorage.getItem("snippet_marks") || "{}");
+  return marks[trackId] || null;
+}
+
+async function getActiveDevice() {
+  const data = await api("/me/player/devices");
+  if (!data || !data.devices.length) {
+    els.status.textContent = "No active Spotify device found. Open the Spotify app on this phone first, then try again.";
+    return null;
+  }
+  const dev = data.devices.find(d => d.is_active) || data.devices[0];
+  state.deviceId = dev.id;
+  return dev.id;
+}
+
+async function searchGenre() {
+  const genre = els.genreInput.value.trim();
+  if (!genre) return;
+  els.status.textContent = "Searching…";
+  const data = await api(`/search?q=${encodeURIComponent(genre)}&type=playlist&limit=5`);
+  const playlists = data?.playlists?.items?.filter(Boolean) || [];
+  if (!playlists.length) {
+    els.status.textContent = "No playlists found for that genre — try another term.";
+    return;
+  }
+  const tracksData = await api(`/playlists/${playlists[0].id}/tracks?limit=30`);
+  const tracks = (tracksData?.items || [])
+    .map(i => i.track)
+    .filter(t => t && t.id);
+  if (!tracks.length) {
+    els.status.textContent = "Playlist had no playable tracks — try another genre.";
+    return;
+  }
+  state.queue = tracks;
+  state.index = -1;
+  els.status.textContent = `Loaded ${tracks.length} tracks from "${playlists[0].name}".`;
+  els.player.classList.remove("hidden");
+  await nextTrack();
+}
+
+async function nextTrack() {
+  clearSnippetTimer();
+  state.index++;
+  if (state.index >= state.queue.length) {
+    els.status.textContent = "End of queue — search another genre.";
+    els.player.classList.add("hidden");
+    return;
+  }
+  const track = state.queue[state.index];
+  els.trackName.textContent = track.name;
+  els.trackArtist.textContent = track.artists.map(a => a.name).join(", ");
+  const marks = loadMarks(track.id);
+  state.markStart = marks?.start ?? null;
+  state.markEnd = marks?.end ?? null;
+  updateMarksLabel();
+  els.likeBtn.classList.remove("liked");
+  els.likeBtn.textContent = "♡ Like";
+
+  const deviceId = state.deviceId || await getActiveDevice();
+  if (!deviceId) return;
+  await api(`/me/player/play?device_id=${deviceId}`, {
+    method: "PUT",
+    body: JSON.stringify({ uris: [track.uri], position_ms: state.markStart || 0 }),
+  });
+  startPosTracking();
+}
+
+function updateMarksLabel() {
+  const fmt = ms => ms == null ? "—" : `${Math.floor(ms/1000/60)}:${String(Math.floor(ms/1000)%60).padStart(2,"0")}`;
+  els.marksLabel.textContent = `Start: ${fmt(state.markStart)}   End: ${fmt(state.markEnd)}`;
+}
+
+function startPosTracking() {
+  clearInterval(state.posTimer);
+  state.posTimer = setInterval(async () => {
+    const p = await api("/me/player");
+    if (p && p.item) {
+      els.posLabel.textContent = fmtTime(p.progress_ms);
+      els.durLabel.textContent = fmtTime(p.item.duration_ms);
+    }
+  }, 1000);
+}
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+}
+
+async function markStart() {
+  const p = await api("/me/player");
+  if (p) { state.markStart = p.progress_ms; updateMarksLabel(); saveMarks(); }
+}
+async function markEnd() {
+  const p = await api("/me/player");
+  if (p) { state.markEnd = p.progress_ms; updateMarksLabel(); saveMarks(); }
+}
+
+function clearSnippetTimer() {
+  if (state.snippetTimer) { clearTimeout(state.snippetTimer); state.snippetTimer = null; }
+}
+
+async function playSnippet() {
+  const track = state.queue[state.index];
+  if (!track || state.markStart == null) {
+    els.status.textContent = "Mark a start point first.";
+    return;
+  }
+  clearSnippetTimer();
+  const deviceId = state.deviceId || await getActiveDevice();
+  await api(`/me/player/seek?position_ms=${state.markStart}&device_id=${deviceId}`, { method: "PUT" });
+  await api(`/me/player/play?device_id=${deviceId}`, { method: "PUT" });
+  if (state.markEnd != null && state.markEnd > state.markStart) {
+    const duration = state.markEnd - state.markStart;
+    state.snippetTimer = setTimeout(async () => {
+      await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
+    }, duration);
+  }
+}
+
+async function extendSnippet() {
+  // Push the auto-stop point back by 15s from right now, and make sure it's playing.
+  clearSnippetTimer();
+  const deviceId = state.deviceId || await getActiveDevice();
+  const p = await api("/me/player");
+  if (p && !p.is_playing) {
+    await api(`/me/player/play?device_id=${deviceId}`, { method: "PUT" });
+  }
+  const EXTEND_MS = 15000;
+  // keep the saved end mark moving forward too, so it reflects where playback will actually stop
+  if (p && p.progress_ms != null) {
+    state.markEnd = p.progress_ms + EXTEND_MS;
+  } else if (state.markEnd != null) {
+    state.markEnd += EXTEND_MS;
+  }
+  updateMarksLabel();
+  saveMarks();
+  state.snippetTimer = setTimeout(async () => {
+    await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
+  }, EXTEND_MS);
+  els.status.textContent = "Extended +15s.";
+}
+
+async function ensureLikedPlaylist() {
+  if (state.likedPlaylistId) return state.likedPlaylistId;
+  const stored = localStorage.getItem("liked_playlist_id");
+  if (stored) { state.likedPlaylistId = stored; return stored; }
+  const me = await api("/me");
+  const lists = await api(`/me/playlists?limit=50`);
+  const existing = lists?.items?.find(p => p.name === LIKED_PLAYLIST_NAME);
+  if (existing) {
+    state.likedPlaylistId = existing.id;
+  } else {
+    const created = await api(`/users/${me.id}/playlists`, {
+      method: "POST",
+      body: JSON.stringify({ name: LIKED_PLAYLIST_NAME, public: false, description: "Songs liked in Snippet Sampler" }),
+    });
+    state.likedPlaylistId = created.id;
+  }
+  localStorage.setItem("liked_playlist_id", state.likedPlaylistId);
+  return state.likedPlaylistId;
+}
+
+async function likeTrack() {
+  const track = state.queue[state.index];
+  if (!track) return;
+  const playlistId = await ensureLikedPlaylist();
+  await api(`/playlists/${playlistId}/tracks`, {
+    method: "POST",
+    body: JSON.stringify({ uris: [track.uri] }),
+  });
+  els.likeBtn.classList.add("liked");
+  els.likeBtn.textContent = "♥ Liked";
+}
+
+// ---------- Wire up UI ----------
+els.loginBtn.addEventListener("click", login);
+els.searchBtn.addEventListener("click", searchGenre);
+els.playBtn.addEventListener("click", async () => {
+  const d = state.deviceId || await getActiveDevice();
+  await api(`/me/player/play?device_id=${d}`, { method: "PUT" });
+});
+els.pauseBtn.addEventListener("click", async () => {
+  await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
+});
+els.markStartBtn.addEventListener("click", markStart);
+els.markEndBtn.addEventListener("click", markEnd);
+els.playSnippetBtn.addEventListener("click", playSnippet);
+els.extendBtn.addEventListener("click", extendSnippet);
+els.likeBtn.addEventListener("click", likeTrack);
+els.skipBtn.addEventListener("click", nextTrack);
+
+// ---------- Boot ----------
+(async function init() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  const stored = localStorage.getItem("access_token");
+
+  if (code) {
+    await exchangeCodeForToken(code);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else if (stored) {
+    state.accessToken = stored;
+  }
+
+  if (state.accessToken) {
+    els.loginView.classList.add("hidden");
+    els.appView.classList.remove("hidden");
+    await getActiveDevice();
+  }
+})();
+</script>
+</body>
+</html>
