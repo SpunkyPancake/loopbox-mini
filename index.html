@@ -295,19 +295,13 @@ async function getActiveDevice() {
 }
 
 const RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyz".split("");
+const REFILL_THRESHOLD = 8;
 
-async function loadRandomQueue() {
-  els.status.textContent = "Finding random songs…";
+async function fetchRandomTracks() {
   const queries = Array.from({ length: 10 }, () => RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)]);
-  let results;
-  try {
-    results = await Promise.all(queries.map(q =>
-      api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`)
-    ));
-  } catch (err) {
-    els.status.textContent = `Search failed: ${err.message}`;
-    return;
-  }
+  const results = await Promise.all(queries.map(q =>
+    api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`)
+  ));
   const seen = new Set();
   const tracks = [];
   for (const data of results) {
@@ -319,25 +313,64 @@ async function loadRandomQueue() {
     const j = Math.floor(Math.random() * (i + 1));
     [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
   }
+  return tracks;
+}
+
+// Fetches more random tracks in the background and appends them to the
+// live queue, so new songs keep turning up while earlier ones are still
+// playing instead of everything being decided up front.
+let topUpPromise = null;
+function topUpQueue() {
+  if (!topUpPromise) {
+    topUpPromise = fetchRandomTracks()
+      .then(tracks => {
+        const existingIds = new Set(state.queue.map(t => t.id));
+        state.queue.push(...tracks.filter(t => !existingIds.has(t.id)));
+      })
+      .catch(err => console.error("Background top-up failed:", err))
+      .finally(() => { topUpPromise = null; });
+  }
+  return topUpPromise;
+}
+
+async function loadRandomQueue() {
+  els.status.textContent = "Finding random songs…";
+  let tracks;
+  try {
+    tracks = await fetchRandomTracks();
+  } catch (err) {
+    els.status.textContent = `Search failed: ${err.message}`;
+    return;
+  }
   if (!tracks.length) {
     els.status.textContent = "Couldn't find any tracks — try again.";
     return;
   }
-  state.queue = tracks.slice(0, 20);
+  state.queue = tracks;
   state.index = -1;
   els.status.textContent = `Loaded ${state.queue.length} random tracks.`;
   els.player.classList.remove("hidden");
+  topUpQueue(); // start finding more in the background right away
   await nextTrack();
 }
 
 async function nextTrack() {
   clearSnippetTimer();
   state.index++;
+
+  if (state.queue.length - state.index <= REFILL_THRESHOLD) {
+    topUpQueue(); // fire-and-forget: keep playback moving while this fetches
+  }
   if (state.index >= state.queue.length) {
     els.status.textContent = "Finding more random songs…";
-    await loadRandomQueue();
+    await topUpQueue();
+  }
+  if (state.index >= state.queue.length) {
+    els.status.textContent = "Couldn't find more tracks — tap Surprise me to retry.";
+    els.player.classList.add("hidden");
     return;
   }
+
   const track = state.queue[state.index];
   els.trackName.textContent = track.name;
   els.trackArtist.textContent = track.artists.map(a => a.name).join(", ");
