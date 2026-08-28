@@ -475,7 +475,15 @@ async function skipForward() {
 async function ensureLikedPlaylist() {
   if (state.likedPlaylistId) return state.likedPlaylistId;
   const stored = localStorage.getItem("liked_playlist_id");
-  if (stored) { state.likedPlaylistId = stored; return stored; }
+  if (stored) {
+    try {
+      await api(`/playlists/${stored}`);
+      state.likedPlaylistId = stored;
+      return stored;
+    } catch (err) {
+      localStorage.removeItem("liked_playlist_id");
+    }
+  }
   const me = await api("/me");
   const lists = await api(`/me/playlists?limit=50`);
   const existing = lists?.items?.find(p => p.name === LIKED_PLAYLIST_NAME);
@@ -495,11 +503,16 @@ async function ensureLikedPlaylist() {
 async function likeTrack() {
   const track = state.queue[state.index];
   if (!track) return;
-  const playlistId = await ensureLikedPlaylist();
-  await api(`/playlists/${playlistId}/tracks`, {
-    method: "POST",
-    body: JSON.stringify({ uris: [track.uri] }),
-  });
+  try {
+    const playlistId = await ensureLikedPlaylist();
+    await api(`/playlists/${playlistId}/tracks`, {
+      method: "POST",
+      body: JSON.stringify({ uris: [track.uri] }),
+    });
+  } catch (err) {
+    els.status.textContent = `Like failed: ${err.message}`;
+    return;
+  }
   els.likeBtn.classList.add("liked");
   els.likeBtn.textContent = "♥ Liked";
 }
