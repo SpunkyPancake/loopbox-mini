@@ -256,10 +256,13 @@ async function api(path, opts = {}, retryCount = 0) {
       ...(opts.headers || {}),
     },
   });
-  if (res.status === 429 && retryCount < 3) {
+  if (res.status === 429) {
     const retryAfter = Number(res.headers.get("Retry-After") || 1);
-    await new Promise(r => setTimeout(r, (retryAfter + 0.5) * 1000));
-    return api(path, opts, retryCount + 1);
+    if (retryCount < 3) {
+      await new Promise(r => setTimeout(r, (retryAfter + 0.5) * 1000));
+      return api(path, opts, retryCount + 1);
+    }
+    throw new Error(`429: rate limited, Spotify says wait ${retryAfter}s (gave up after 3 retries)`);
   }
   if (res.status === 204 || res.status === 202) return null;
   const text = await res.text();
