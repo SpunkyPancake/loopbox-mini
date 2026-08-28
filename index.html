@@ -101,9 +101,6 @@
       <div class="marks" id="marksLabel"></div>
       <div class="row">
         <button class="secondary" id="playSnippetBtn">▶ Play snippet</button>
-        <button class="secondary" id="extendBtn">+15s</button>
-      </div>
-      <div class="row">
         <button class="secondary" id="skipForwardBtn">⏩ Skip 5s</button>
       </div>
 
@@ -123,7 +120,7 @@ const CLIENT_ID = "26a9bb73abf54958acb4a5b96165859d";
 const REDIRECT_URI = window.location.origin + window.location.pathname; // must exactly match what you set in the Spotify dashboard
 const LIKED_PLAYLIST_NAME = "Snippet Sampler Likes";
 const DEFAULT_SNIPPET_MS = 10000;
-const START_WINDOW_FRACTION = 0.6; // random start point is chosen from the first 60% of the track
+const START_WINDOW_MS = 60000; // random start point is chosen from the first minute of the track
 const SKIP_MS = 5000;
 /* ===================================== */
 
@@ -152,7 +149,6 @@ const els = {
   markEndBtn: document.getElementById("markEndBtn"),
   marksLabel: document.getElementById("marksLabel"),
   playSnippetBtn: document.getElementById("playSnippetBtn"),
-  extendBtn: document.getElementById("extendBtn"),
   skipForwardBtn: document.getElementById("skipForwardBtn"),
   likeBtn: document.getElementById("likeBtn"),
   skipBtn: document.getElementById("skipBtn"),
@@ -393,7 +389,7 @@ async function nextTrack() {
     state.markEnd = saved.end;
   } else {
     const duration = track.duration_ms || 0;
-    const maxStart = Math.max(Math.min(duration * START_WINDOW_FRACTION, duration - DEFAULT_SNIPPET_MS), 0);
+    const maxStart = Math.max(Math.min(START_WINDOW_MS, duration - DEFAULT_SNIPPET_MS), 0);
     state.markStart = Math.floor(Math.random() * (maxStart + 1));
     state.markEnd = state.markStart + DEFAULT_SNIPPET_MS;
   }
@@ -468,26 +464,6 @@ async function playSnippet() {
   scheduleAutoStop(duration);
 }
 
-async function extendSnippet() {
-  // Push the auto-stop point back by 15s from right now, and make sure it's playing.
-  const deviceId = state.deviceId || await getActiveDevice();
-  const p = await api("/me/player");
-  if (p && !p.is_playing) {
-    await api(`/me/player/play?device_id=${deviceId}`, { method: "PUT" });
-  }
-  const EXTEND_MS = 15000;
-  // keep the saved end mark moving forward too, so it reflects where playback will actually stop
-  if (p && p.progress_ms != null) {
-    state.markEnd = p.progress_ms + EXTEND_MS;
-  } else if (state.markEnd != null) {
-    state.markEnd += EXTEND_MS;
-  }
-  updateMarksLabel();
-  saveMarks();
-  scheduleAutoStop(EXTEND_MS);
-  els.status.textContent = "Extended +15s.";
-}
-
 async function skipForward() {
   const deviceId = state.deviceId || await getActiveDevice();
   const p = await api("/me/player");
@@ -542,7 +518,6 @@ els.pauseBtn.addEventListener("click", async () => {
 els.markStartBtn.addEventListener("click", markStart);
 els.markEndBtn.addEventListener("click", markEnd);
 els.playSnippetBtn.addEventListener("click", playSnippet);
-els.extendBtn.addEventListener("click", extendSnippet);
 els.skipForwardBtn.addEventListener("click", skipForward);
 els.likeBtn.addEventListener("click", likeTrack);
 els.skipBtn.addEventListener("click", nextTrack);
