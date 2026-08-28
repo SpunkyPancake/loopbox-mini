@@ -301,7 +301,7 @@ async function loadRandomQueue() {
   let results;
   try {
     results = await Promise.all(queries.map(q =>
-      api(`/search?q=${encodeURIComponent(q)}&type=track&limit=50&offset=${Math.floor(Math.random() * 950)}`)
+      api(`/search?q=${encodeURIComponent(q)}&type=track&limit=50&offset=${Math.floor(Math.random() * 500)}`)
     ));
   } catch (err) {
     els.status.textContent = `Search failed: ${err.message}`;
