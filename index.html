@@ -297,8 +297,14 @@ async function getActiveDevice() {
 const RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyz".split("");
 const REFILL_THRESHOLD = 8;
 
+function randomQuery() {
+  const a = RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)];
+  const b = RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)];
+  return a + b;
+}
+
 async function fetchRandomTracks() {
-  const queries = Array.from({ length: 10 }, () => RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)]);
+  const queries = Array.from({ length: 10 }, randomQuery);
   const results = await Promise.all(queries.map(q =>
     api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`)
   ));
