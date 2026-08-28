@@ -252,7 +252,7 @@ async function ensureFreshToken() {
   await refreshPromise;
 }
 
-async function api(path, opts = {}) {
+async function api(path, opts = {}, retryCount = 0) {
   await ensureFreshToken();
   const res = await fetch("https://api.spotify.com/v1" + path, {
     ...opts,
@@ -262,6 +262,11 @@ async function api(path, opts = {}) {
       ...(opts.headers || {}),
     },
   });
+  if (res.status === 429 && retryCount < 3) {
+    const retryAfter = Number(res.headers.get("Retry-After") || 1);
+    await new Promise(r => setTimeout(r, (retryAfter + 0.5) * 1000));
+    return api(path, opts, retryCount + 1);
+  }
   if (res.status === 204 || res.status === 202) return null;
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
@@ -306,7 +311,7 @@ function randomQuery() {
 }
 
 async function fetchRandomTracks() {
-  const queries = Array.from({ length: 10 }, randomQuery);
+  const queries = Array.from({ length: 6 }, randomQuery);
   const results = await Promise.all(queries.map(q =>
     api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`)
   ));
@@ -420,7 +425,7 @@ function startPosTracking() {
       els.posLabel.textContent = fmtTime(p.progress_ms);
       els.durLabel.textContent = fmtTime(p.item.duration_ms);
     }
-  }, 1000);
+  }, 3000);
 }
 function fmtTime(ms) {
   const s = Math.floor(ms / 1000);
