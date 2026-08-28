@@ -183,6 +183,8 @@ function randomString(len = 64) {
 async function login() {
   const verifier = randomString();
   localStorage.setItem("pkce_verifier", verifier);
+  const oauthState = randomString(32);
+  localStorage.setItem("oauth_state", oauthState);
   const challenge = base64url(await sha256(verifier));
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
@@ -191,6 +193,7 @@ async function login() {
     code_challenge_method: "S256",
     code_challenge: challenge,
     scope: SCOPES,
+    state: oauthState,
   });
   window.location = "https://accounts.spotify.com/authorize?" + params.toString();
 }
@@ -544,9 +547,17 @@ els.skipBtn.addEventListener("click", nextTrack);
 (async function init() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
+  const returnedState = params.get("state");
   const stored = localStorage.getItem("access_token");
 
   if (code) {
+    const expectedState = localStorage.getItem("oauth_state");
+    localStorage.removeItem("oauth_state");
+    if (!expectedState || returnedState !== expectedState) {
+      alert("Login failed: security check did not match. Please try logging in again.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
     await exchangeCodeForToken(code);
     window.history.replaceState({}, document.title, window.location.pathname);
   } else if (stored) {
