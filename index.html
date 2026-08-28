@@ -120,6 +120,7 @@ const CLIENT_ID = "26a9bb73abf54958acb4a5b96165859d";
 const REDIRECT_URI = window.location.origin + window.location.pathname; // must exactly match what you set in the Spotify dashboard
 const LIKED_PLAYLIST_NAME = "Snippet Sampler Likes";
 const DEFAULT_SNIPPET_MS = 10000;
+const START_WINDOW_FRACTION = 0.6; // random start point is chosen from the first 60% of the track
 /* ===================================== */
 
 const SCOPES = [
@@ -387,7 +388,7 @@ async function nextTrack() {
     state.markEnd = saved.end;
   } else {
     const duration = track.duration_ms || 0;
-    const maxStart = Math.max(duration - DEFAULT_SNIPPET_MS, 0);
+    const maxStart = Math.max(Math.min(duration * START_WINDOW_FRACTION, duration - DEFAULT_SNIPPET_MS), 0);
     state.markStart = Math.floor(Math.random() * (maxStart + 1));
     state.markEnd = state.markStart + DEFAULT_SNIPPET_MS;
   }
