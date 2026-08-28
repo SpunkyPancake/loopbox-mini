@@ -119,6 +119,7 @@
 const CLIENT_ID = "26a9bb73abf54958acb4a5b96165859d";
 const REDIRECT_URI = window.location.origin + window.location.pathname; // must exactly match what you set in the Spotify dashboard
 const LIKED_PLAYLIST_NAME = "Snippet Sampler Likes";
+const DEFAULT_SNIPPET_MS = 5000;
 /* ===================================== */
 
 const SCOPES = [
@@ -333,17 +334,26 @@ async function nextTrack() {
   clearSnippetTimer();
   state.index++;
   if (state.index >= state.queue.length) {
-    els.status.textContent = "End of queue — tap Surprise me for more.";
-    els.player.classList.add("hidden");
+    els.status.textContent = "Finding more random songs…";
+    await loadRandomQueue();
     return;
   }
   const track = state.queue[state.index];
   els.trackName.textContent = track.name;
   els.trackArtist.textContent = track.artists.map(a => a.name).join(", ");
-  const marks = loadMarks(track.id);
-  state.markStart = marks?.start ?? null;
-  state.markEnd = marks?.end ?? null;
+
+  const saved = loadMarks(track.id);
+  if (saved && saved.start != null) {
+    state.markStart = saved.start;
+    state.markEnd = saved.end;
+  } else {
+    const duration = track.duration_ms || 0;
+    const maxStart = Math.max(duration - DEFAULT_SNIPPET_MS, 0);
+    state.markStart = Math.floor(Math.random() * (maxStart + 1));
+    state.markEnd = state.markStart + DEFAULT_SNIPPET_MS;
+  }
   updateMarksLabel();
+  saveMarks();
   els.likeBtn.classList.remove("liked");
   els.likeBtn.textContent = "♡ Like";
 
@@ -354,6 +364,7 @@ async function nextTrack() {
     body: JSON.stringify({ uris: [track.uri], position_ms: state.markStart || 0 }),
   });
   startPosTracking();
+  scheduleAutoStop(state.markEnd - state.markStart);
 }
 
 function updateMarksLabel() {
@@ -389,27 +400,32 @@ function clearSnippetTimer() {
   if (state.snippetTimer) { clearTimeout(state.snippetTimer); state.snippetTimer = null; }
 }
 
+function scheduleAutoStop(delayMs) {
+  clearSnippetTimer();
+  if (delayMs == null || delayMs <= 0) return;
+  state.snippetTimer = setTimeout(async () => {
+    await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
+    await nextTrack();
+  }, delayMs);
+}
+
 async function playSnippet() {
   const track = state.queue[state.index];
   if (!track || state.markStart == null) {
     els.status.textContent = "Mark a start point first.";
     return;
   }
-  clearSnippetTimer();
   const deviceId = state.deviceId || await getActiveDevice();
   await api(`/me/player/seek?position_ms=${state.markStart}&device_id=${deviceId}`, { method: "PUT" });
   await api(`/me/player/play?device_id=${deviceId}`, { method: "PUT" });
-  if (state.markEnd != null && state.markEnd > state.markStart) {
-    const duration = state.markEnd - state.markStart;
-    state.snippetTimer = setTimeout(async () => {
-      await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
-    }, duration);
-  }
+  const duration = state.markEnd != null && state.markEnd > state.markStart
+    ? state.markEnd - state.markStart
+    : DEFAULT_SNIPPET_MS;
+  scheduleAutoStop(duration);
 }
 
 async function extendSnippet() {
   // Push the auto-stop point back by 15s from right now, and make sure it's playing.
-  clearSnippetTimer();
   const deviceId = state.deviceId || await getActiveDevice();
   const p = await api("/me/player");
   if (p && !p.is_playing) {
@@ -424,9 +440,7 @@ async function extendSnippet() {
   }
   updateMarksLabel();
   saveMarks();
-  state.snippetTimer = setTimeout(async () => {
-    await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
-  }, EXTEND_MS);
+  scheduleAutoStop(EXTEND_MS);
   els.status.textContent = "Extended +15s.";
 }
 
@@ -470,6 +484,7 @@ els.playBtn.addEventListener("click", async () => {
   await api(`/me/player/play?device_id=${d}`, { method: "PUT" });
 });
 els.pauseBtn.addEventListener("click", async () => {
+  clearSnippetTimer();
   await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
 });
 els.markStartBtn.addEventListener("click", markStart);
