@@ -58,6 +58,7 @@
   }
   .track-name { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
   .track-artist { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  .track-source { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: -10px; margin-bottom: 14px; }
   .status { text-align: center; color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 16px; }
   .like-btn.liked { background: var(--accent); color: #000; }
   hr { border: none; border-top: 1px solid #262626; margin: 20px 0; }
@@ -80,6 +81,7 @@
     <div id="player" class="card hidden">
       <div class="track-name" id="trackName">—</div>
       <div class="track-artist" id="trackArtist">—</div>
+      <div class="track-source" id="trackSource"></div>
 
       <div class="row">
         <button class="secondary" id="playBtn">▶ Play</button>
@@ -130,6 +132,7 @@ const els = {
   player: document.getElementById("player"),
   trackName: document.getElementById("trackName"),
   trackArtist: document.getElementById("trackArtist"),
+  trackSource: document.getElementById("trackSource"),
   playBtn: document.getElementById("playBtn"),
   pauseBtn: document.getElementById("pauseBtn"),
   skipBackwardBtn: document.getElementById("skipBackwardBtn"),
@@ -300,7 +303,7 @@ function randomQuery() {
   return a + b;
 }
 
-async function fetchRandomTracks(queryCount = 6) {
+async function fetchRandomTracks(queryCount = 6, source = "search") {
   const queries = Array.from({ length: queryCount }, randomQuery);
   const runQuery = q => api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`);
   let results;
@@ -323,6 +326,7 @@ async function fetchRandomTracks(queryCount = 6) {
     const j = Math.floor(Math.random() * (i + 1));
     [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
   }
+  for (const t of tracks) t._source = source;
   return tracks;
 }
 
@@ -332,7 +336,7 @@ async function fetchRandomTracks(queryCount = 6) {
 let topUpPromise = null;
 function topUpQueue(queryCount = 6) {
   if (!topUpPromise) {
-    topUpPromise = fetchRandomTracks(queryCount)
+    topUpPromise = fetchRandomTracks(queryCount, "background")
       .then(tracks => {
         const existingIds = new Set(state.queue.map(t => t.id));
         state.queue.push(...tracks.filter(t => !existingIds.has(t.id)));
@@ -395,6 +399,7 @@ async function nextTrack() {
   const track = state.queue[state.index];
   els.trackName.textContent = track.name;
   els.trackArtist.textContent = track.artists.map(a => a.name).join(", ");
+  els.trackSource.textContent = track._source === "background" ? "🌑 shot in the dark" : "🔍 semi-random search";
 
   const saved = loadMarks(track.id);
   if (saved && saved.start != null) {
