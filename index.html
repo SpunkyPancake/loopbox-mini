@@ -76,8 +76,7 @@
   </div>
 
   <div id="appView" class="hidden">
-    <input type="text" id="genreInput" placeholder="Type a genre (e.g. shoegaze)">
-    <button class="primary" id="searchBtn">Find songs</button>
+    <button class="primary" id="searchBtn">🎲 Surprise me</button>
     <div id="status" class="status"></div>
 
     <div id="player" class="card hidden">
@@ -134,7 +133,6 @@ const els = {
   loginView: document.getElementById("loginView"),
   appView: document.getElementById("appView"),
   loginBtn: document.getElementById("loginBtn"),
-  genreInput: document.getElementById("genreInput"),
   searchBtn: document.getElementById("searchBtn"),
   status: document.getElementById("status"),
   player: document.getElementById("player"),
@@ -283,27 +281,32 @@ async function getActiveDevice() {
   return dev.id;
 }
 
-async function searchGenre() {
-  const genre = els.genreInput.value.trim();
-  if (!genre) return;
-  els.status.textContent = "Searching…";
-  const data = await api(`/search?q=${encodeURIComponent(genre)}&type=playlist&limit=5`);
-  const playlists = data?.playlists?.items?.filter(Boolean) || [];
-  if (!playlists.length) {
-    els.status.textContent = "No playlists found for that genre — try another term.";
-    return;
+const RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyz".split("");
+
+async function loadRandomQueue() {
+  els.status.textContent = "Finding random songs…";
+  const queries = Array.from({ length: 5 }, () => RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)]);
+  const results = await Promise.all(queries.map(q =>
+    api(`/search?q=${encodeURIComponent(q)}&type=track&limit=50&offset=${Math.floor(Math.random() * 950)}`)
+  ));
+  const seen = new Set();
+  const tracks = [];
+  for (const data of results) {
+    for (const t of (data?.tracks?.items || [])) {
+      if (t && t.id && !seen.has(t.id)) { seen.add(t.id); tracks.push(t); }
+    }
   }
-  const tracksData = await api(`/playlists/${playlists[0].id}/tracks?limit=30`);
-  const tracks = (tracksData?.items || [])
-    .map(i => i.track)
-    .filter(t => t && t.id);
+  for (let i = tracks.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
+  }
   if (!tracks.length) {
-    els.status.textContent = "Playlist had no playable tracks — try another genre.";
+    els.status.textContent = "Couldn't find any tracks — try again.";
     return;
   }
-  state.queue = tracks;
+  state.queue = tracks.slice(0, 20);
   state.index = -1;
-  els.status.textContent = `Loaded ${tracks.length} tracks from "${playlists[0].name}".`;
+  els.status.textContent = `Loaded ${state.queue.length} random tracks.`;
   els.player.classList.remove("hidden");
   await nextTrack();
 }
@@ -312,7 +315,7 @@ async function nextTrack() {
   clearSnippetTimer();
   state.index++;
   if (state.index >= state.queue.length) {
-    els.status.textContent = "End of queue — search another genre.";
+    els.status.textContent = "End of queue — tap Surprise me for more.";
     els.player.classList.add("hidden");
     return;
   }
@@ -443,7 +446,7 @@ async function likeTrack() {
 
 // ---------- Wire up UI ----------
 els.loginBtn.addEventListener("click", login);
-els.searchBtn.addEventListener("click", searchGenre);
+els.searchBtn.addEventListener("click", loadRandomQueue);
 els.playBtn.addEventListener("click", async () => {
   const d = state.deviceId || await getActiveDevice();
   await api(`/me/player/play?device_id=${d}`, { method: "PUT" });
