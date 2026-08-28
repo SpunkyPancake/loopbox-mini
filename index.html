@@ -58,7 +58,6 @@
   }
   .track-name { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
   .track-artist { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
-  .marks { font-size: 13px; color: var(--accent); margin-top: 8px; min-height: 18px; }
   .status { text-align: center; color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 16px; }
   .like-btn.liked { background: var(--accent); color: #000; }
   hr { border: none; border-top: 1px solid #262626; margin: 20px 0; }
@@ -89,12 +88,7 @@
       <hr>
 
       <div class="row">
-        <button class="secondary" id="markStartBtn">Mark start</button>
-        <button class="secondary" id="markEndBtn">Mark end</button>
-      </div>
-      <div class="marks" id="marksLabel"></div>
-      <div class="row">
-        <button class="secondary" id="playSnippetBtn">▶ Play snippet</button>
+        <button class="secondary" id="skipBackwardBtn">⏪ Rewind 5s</button>
         <button class="secondary" id="skipForwardBtn">⏩ Skip 5s</button>
       </div>
 
@@ -138,10 +132,7 @@ const els = {
   trackArtist: document.getElementById("trackArtist"),
   playBtn: document.getElementById("playBtn"),
   pauseBtn: document.getElementById("pauseBtn"),
-  markStartBtn: document.getElementById("markStartBtn"),
-  markEndBtn: document.getElementById("markEndBtn"),
-  marksLabel: document.getElementById("marksLabel"),
-  playSnippetBtn: document.getElementById("playSnippetBtn"),
+  skipBackwardBtn: document.getElementById("skipBackwardBtn"),
   skipForwardBtn: document.getElementById("skipForwardBtn"),
   likeBtn: document.getElementById("likeBtn"),
   skipBtn: document.getElementById("skipBtn"),
@@ -154,7 +145,6 @@ let state = {
   deviceId: null,
   markStart: null,
   markEnd: null,
-  snippetTimer: null,
   likedPlaylistId: null,
 };
 
@@ -387,7 +377,6 @@ async function loadRandomQueue() {
 }
 
 async function nextTrack() {
-  clearSnippetTimer();
   state.index++;
 
   if (state.queue.length - state.index <= LOW_THRESHOLD) {
@@ -417,7 +406,6 @@ async function nextTrack() {
     state.markStart = Math.floor(Math.random() * (maxStart + 1));
     state.markEnd = state.markStart + DEFAULT_SNIPPET_MS;
   }
-  updateMarksLabel();
   saveMarks();
   els.likeBtn.classList.remove("liked");
   els.likeBtn.textContent = "♡ Like";
@@ -430,54 +418,19 @@ async function nextTrack() {
   });
 }
 
-function updateMarksLabel() {
-  const fmt = ms => ms == null ? "—" : `${Math.floor(ms/1000/60)}:${String(Math.floor(ms/1000)%60).padStart(2,"0")}`;
-  els.marksLabel.textContent = `Start: ${fmt(state.markStart)}   End: ${fmt(state.markEnd)}`;
-}
-
-
-async function markStart() {
-  const p = await api("/me/player");
-  if (p) { state.markStart = p.progress_ms; updateMarksLabel(); saveMarks(); }
-}
-async function markEnd() {
-  const p = await api("/me/player");
-  if (p) { state.markEnd = p.progress_ms; updateMarksLabel(); saveMarks(); }
-}
-
-function clearSnippetTimer() {
-  if (state.snippetTimer) { clearTimeout(state.snippetTimer); state.snippetTimer = null; }
-}
-
-function scheduleAutoStop(delayMs) {
-  clearSnippetTimer();
-  if (delayMs == null || delayMs <= 0) return;
-  state.snippetTimer = setTimeout(async () => {
-    await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
-    await nextTrack();
-  }, delayMs);
-}
-
-async function playSnippet() {
-  const track = state.queue[state.index];
-  if (!track || state.markStart == null) {
-    els.status.textContent = "Mark a start point first.";
-    return;
-  }
-  const deviceId = state.deviceId || await getActiveDevice();
-  await api(`/me/player/seek?position_ms=${state.markStart}&device_id=${deviceId}`, { method: "PUT" });
-  await api(`/me/player/play?device_id=${deviceId}`, { method: "PUT" });
-  const duration = state.markEnd != null && state.markEnd > state.markStart
-    ? state.markEnd - state.markStart
-    : DEFAULT_SNIPPET_MS;
-  scheduleAutoStop(duration);
-}
-
 async function skipForward() {
   const deviceId = state.deviceId || await getActiveDevice();
   const p = await api("/me/player");
   if (p && p.progress_ms != null) {
     await api(`/me/player/seek?position_ms=${p.progress_ms + SKIP_MS}&device_id=${deviceId}`, { method: "PUT" });
+  }
+}
+
+async function skipBackward() {
+  const deviceId = state.deviceId || await getActiveDevice();
+  const p = await api("/me/player");
+  if (p && p.progress_ms != null) {
+    await api(`/me/player/seek?position_ms=${Math.max(p.progress_ms - SKIP_MS, 0)}&device_id=${deviceId}`, { method: "PUT" });
   }
 }
 
@@ -534,12 +487,9 @@ els.playBtn.addEventListener("click", async () => {
   await api(`/me/player/play?device_id=${d}`, { method: "PUT" });
 });
 els.pauseBtn.addEventListener("click", async () => {
-  clearSnippetTimer();
   await api(`/me/player/pause?device_id=${state.deviceId}`, { method: "PUT" });
 });
-els.markStartBtn.addEventListener("click", markStart);
-els.markEndBtn.addEventListener("click", markEnd);
-els.playSnippetBtn.addEventListener("click", playSnippet);
+els.skipBackwardBtn.addEventListener("click", skipBackward);
 els.skipForwardBtn.addEventListener("click", skipForward);
 els.likeBtn.addEventListener("click", likeTrack);
 els.skipBtn.addEventListener("click", nextTrack);
