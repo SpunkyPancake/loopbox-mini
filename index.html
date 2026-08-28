@@ -297,11 +297,11 @@ const RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyz".split("");
 
 async function loadRandomQueue() {
   els.status.textContent = "Finding random songs…";
-  const queries = Array.from({ length: 5 }, () => RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)]);
+  const queries = Array.from({ length: 10 }, () => RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)]);
   let results;
   try {
     results = await Promise.all(queries.map(q =>
-      api(`/search?q=${encodeURIComponent(q)}&type=track&limit=50&offset=${Math.floor(Math.random() * 500)}`)
+      api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`)
     ));
   } catch (err) {
     els.status.textContent = `Search failed: ${err.message}`;
