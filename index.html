@@ -305,7 +305,9 @@ async function getActiveDevice() {
 }
 
 const RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyz".split("");
-const REFILL_THRESHOLD = 8;
+const QUEUE_TARGET = 20;
+const LOW_THRESHOLD = 5;
+const TRICKLE_INTERVAL_MS = 15000;
 
 function randomQuery() {
   const a = RANDOM_CHARS[Math.floor(Math.random() * RANDOM_CHARS.length)];
@@ -313,8 +315,8 @@ function randomQuery() {
   return a + b;
 }
 
-async function fetchRandomTracks() {
-  const queries = Array.from({ length: 6 }, randomQuery);
+async function fetchRandomTracks(queryCount = 6) {
+  const queries = Array.from({ length: queryCount }, randomQuery);
   const results = await Promise.all(queries.map(q =>
     api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10&offset=${Math.floor(Math.random() * 200)}`)
   ));
@@ -336,9 +338,9 @@ async function fetchRandomTracks() {
 // live queue, so new songs keep turning up while earlier ones are still
 // playing instead of everything being decided up front.
 let topUpPromise = null;
-function topUpQueue() {
+function topUpQueue(queryCount = 6) {
   if (!topUpPromise) {
-    topUpPromise = fetchRandomTracks()
+    topUpPromise = fetchRandomTracks(queryCount)
       .then(tracks => {
         const existingIds = new Set(state.queue.map(t => t.id));
         state.queue.push(...tracks.filter(t => !existingIds.has(t.id)));
@@ -347,6 +349,18 @@ function topUpQueue() {
       .finally(() => { topUpPromise = null; });
   }
   return topUpPromise;
+}
+
+// Gently tops the queue back up to QUEUE_TARGET with one search request
+// every TRICKLE_INTERVAL_MS, instead of bursts of parallel requests.
+let trickleTimer = null;
+function startTrickle() {
+  if (trickleTimer) return;
+  trickleTimer = setInterval(() => {
+    if (state.queue.length - state.index < QUEUE_TARGET) {
+      topUpQueue(1);
+    }
+  }, TRICKLE_INTERVAL_MS);
 }
 
 async function loadRandomQueue() {
@@ -362,11 +376,11 @@ async function loadRandomQueue() {
     els.status.textContent = "Couldn't find any tracks — try again.";
     return;
   }
-  state.queue = tracks;
+  state.queue = tracks.slice(0, QUEUE_TARGET);
   state.index = -1;
   els.status.textContent = `Loaded ${state.queue.length} random tracks.`;
   els.player.classList.remove("hidden");
-  topUpQueue(); // start finding more in the background right away
+  startTrickle();
   await nextTrack();
 }
 
@@ -374,12 +388,12 @@ async function nextTrack() {
   clearSnippetTimer();
   state.index++;
 
-  if (state.queue.length - state.index <= REFILL_THRESHOLD) {
-    topUpQueue(); // fire-and-forget: keep playback moving while this fetches
+  if (state.queue.length - state.index <= LOW_THRESHOLD) {
+    topUpQueue(6); // fire-and-forget: faster catch-up when running low
   }
   if (state.index >= state.queue.length) {
     els.status.textContent = "Finding more random songs…";
-    await topUpQueue();
+    await topUpQueue(6);
   }
   if (state.index >= state.queue.length) {
     els.status.textContent = "Couldn't find more tracks — tap Surprise me to retry.";
