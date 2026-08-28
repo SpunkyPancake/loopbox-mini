@@ -103,6 +103,9 @@
         <button class="secondary" id="playSnippetBtn">▶ Play snippet</button>
         <button class="secondary" id="extendBtn">+15s</button>
       </div>
+      <div class="row">
+        <button class="secondary" id="skipForwardBtn">⏩ Skip 5s</button>
+      </div>
 
       <hr>
 
@@ -121,6 +124,7 @@ const REDIRECT_URI = window.location.origin + window.location.pathname; // must 
 const LIKED_PLAYLIST_NAME = "Snippet Sampler Likes";
 const DEFAULT_SNIPPET_MS = 10000;
 const START_WINDOW_FRACTION = 0.6; // random start point is chosen from the first 60% of the track
+const SKIP_MS = 5000;
 /* ===================================== */
 
 const SCOPES = [
@@ -149,6 +153,7 @@ const els = {
   marksLabel: document.getElementById("marksLabel"),
   playSnippetBtn: document.getElementById("playSnippetBtn"),
   extendBtn: document.getElementById("extendBtn"),
+  skipForwardBtn: document.getElementById("skipForwardBtn"),
   likeBtn: document.getElementById("likeBtn"),
   skipBtn: document.getElementById("skipBtn"),
 };
@@ -404,7 +409,6 @@ async function nextTrack() {
     body: JSON.stringify({ uris: [track.uri], position_ms: state.markStart || 0 }),
   });
   startPosTracking();
-  scheduleAutoStop(state.markEnd - state.markStart);
 }
 
 function updateMarksLabel() {
@@ -484,6 +488,14 @@ async function extendSnippet() {
   els.status.textContent = "Extended +15s.";
 }
 
+async function skipForward() {
+  const deviceId = state.deviceId || await getActiveDevice();
+  const p = await api("/me/player");
+  if (p && p.progress_ms != null) {
+    await api(`/me/player/seek?position_ms=${p.progress_ms + SKIP_MS}&device_id=${deviceId}`, { method: "PUT" });
+  }
+}
+
 async function ensureLikedPlaylist() {
   if (state.likedPlaylistId) return state.likedPlaylistId;
   const stored = localStorage.getItem("liked_playlist_id");
@@ -531,6 +543,7 @@ els.markStartBtn.addEventListener("click", markStart);
 els.markEndBtn.addEventListener("click", markEnd);
 els.playSnippetBtn.addEventListener("click", playSnippet);
 els.extendBtn.addEventListener("click", extendSnippet);
+els.skipForwardBtn.addEventListener("click", skipForward);
 els.likeBtn.addEventListener("click", likeTrack);
 els.skipBtn.addEventListener("click", nextTrack);
 
